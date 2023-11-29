@@ -1,96 +1,130 @@
+// App.js
+
 import React, { useState } from 'react';
-import styled from 'styled-components';
-import picture from './cyber-4610993_640.jpg';
 
-const AppWrapper = styled.div`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background-image: url(${picture});
-  background-size: cover;
-  background-position: center;
-`;
+import './App.css';
 
-const LoginForm = styled.div`
-  background: rgba(0, 0, 0, 0.7);
-  padding: 20px;
-  border-radius: 10px;
-`;
+function* cartesianProduct(chars, length) {
+  if (length === 0) {
+    yield '';
+    return;
+  }
+  for (let i = 0; i < chars.length; i++) {
+    let rest = cartesianProduct(chars, length - 1);
+    for (let x of rest) {
+      yield [chars[i]].concat(x);
+    }
+  }
+}
 
-const PasswordInput = styled.input`
-  padding: 10px;
-  margin: 10px 0;
-  border: none;
-  border-radius: 5px;
-  width: 100%;
-  box-sizing: border-box;
-`;
+function bruteForceWithTimeout(target, maxLength, timeoutDuration) {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let attempts = 0;
 
-const SubmitButton = styled.button`
-  padding: 10px;
-  background-color: #4caf50; /* Green background color */
-  color: white; /* White text color */
-  border: none; /* Remove border */
-  border-radius: 5px;
-  cursor: pointer; /* Pointer/hand cursor */
-  width: 100%;
-  box-sizing: border-box;
-`;
+    for (let length = 1; length <= maxLength; length++) {
+      for (let guess of cartesianProduct(characters, length)) {
+        attempts++;
+        guess = guess.join('');
+        if (guess === target) {
+          return resolve([guess, attempts]);
+        }
+        if (Date.now() - startTime > timeoutDuration) {
+          return reject(new Error('Operation timed out'));
+        }
+      }
+    }
+    return resolve([null, attempts]);
+  });
+}
 
-const Heading = styled.h1`
-  color: white;
-`;
+function dictionaryAttack(target, maxLength, timeoutDuration) {
+  const dictionary = ['password', '123456', 'qwerty', 'letmein', 'admin'];
 
-const App = () => {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    let attempts = 0;
+
+    for (let word of dictionary) {
+      attempts++;
+      if (word === target) {
+        return resolve([word, attempts]);
+      }
+      if (Date.now() - startTime > timeoutDuration) {
+        return reject(new Error('Operation timed out'));
+      }
+    }
+    return resolve([null, attempts]);
+  });
+}
+
+function App() {
   const [password, setPassword] = useState('');
-  const [method, setMethod] = useState('brute-force'); 
-  const [crackResult, setCrackResult] = useState('');
+  const [result, setResult] = useState('');
+  const [isCracking, setIsCracking] = useState(false);
+  const [attackType, setAttackType] = useState('bruteForce');
 
-  const crackPassword = async () => {
+  const handlePasswordChange = (event) => {
+    setPassword(event.target.value);
+  };
+
+  const handleAttackTypeChange = (event) => {
+    setAttackType(event.target.value);
+  };
+
+  const handleFormSubmit = async (event) => {
+    event.preventDefault();
+    setResult('');
+    setIsCracking(true);
+
     try {
-      const response = await fetch('http://localhost:5000/crack-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          password,
-          method,
-        }),
-      });
+      const startTime = Date.now();
+      const timeoutDuration = 50000;
+      let crackingFunction;
 
-      if (!response.ok) {
-        throw new Error('Failed to crack password');
+      if (attackType === 'bruteForce') {
+        crackingFunction = bruteForceWithTimeout;
+      } else if (attackType === 'dictionary') {
+        crackingFunction = dictionaryAttack;
       }
 
-      const result = await response.json();
-      setCrackResult(`Password found: ${result.result}, Attempts: ${result.attempts}, Time taken: ${result.time_taken.toFixed(2)} seconds`);
+      const [crackedPassword, attempts] = await crackingFunction(password, 5, timeoutDuration);
+      const endTime = Date.now();
+      const timeTakenInSeconds = (endTime - startTime) / 1000; // Convert milliseconds to seconds
+
+      setResult(`Password: ${crackedPassword || 'not found'}, Attempts: ${attempts}, Time taken: ${timeTakenInSeconds.toFixed(2)} seconds`);
     } catch (error) {
-      console.error(error);
-      setCrackResult('Failed to crack password');
+      setResult(error.message);
+    } finally {
+      setIsCracking(false);
     }
   };
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    crackPassword();
-  };
-
   return (
-    <AppWrapper>
-      <LoginForm>
-        <Heading>Enter your password below</Heading>
-        <PasswordInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" />
-        <select value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="brute-force">Brute Force</option>
-          <option value="dictionary">Dictionary Attack</option>
-        </select>
-        <SubmitButton type="submit" onClick={handleSubmit}>Submit</SubmitButton>
-      </LoginForm>
-
-      {crackResult && <p>{crackResult}</p>}
-    </AppWrapper>
+    <div className="App">
+      <header className="App-header">
+        <h1>Password Cracker</h1>
+        <form onSubmit={handleFormSubmit}>
+          <input
+            type="text"
+            value={password}
+            onChange={handlePasswordChange}
+            placeholder="Enter password"
+            disabled={isCracking}
+            className="input-field"
+          />
+          <select value={attackType} onChange={handleAttackTypeChange} disabled={isCracking} className="select-field">
+            <option value="bruteForce">Brute Force</option>
+            <option value="dictionary">Dictionary Attack</option>
+          </select>
+          <button type="submit" disabled={isCracking} className="button">
+            Crack Password
+          </button>
+        </form>
+        {result && <p className="result">Result: {result}</p>}
+      </header>
+    </div>
   );
 }
 
